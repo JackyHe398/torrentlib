@@ -8,6 +8,62 @@ from .PeerCommunicationException import *
 
 METADATA_PIECE_SIZE = 16384  # 16KB per piece (BEP 9 standard)
 
+
+def _find_bencode_end(data: bytes, start: int = 0) -> int:
+    """
+    Return the index immediately after the first complete bencoded value.
+
+    This is used for ut_metadata messages, which are framed as:
+    <bencoded dict><raw metadata bytes>
+    """
+    def _parse_at(i: int) -> int:
+        if i >= len(data):
+            raise ValueError("Unexpected end of bencoded data")
+
+        token = data[i:i + 1]
+
+        if token == b'i':
+            end = data.find(b'e', i + 1)
+            if end == -1:
+                raise ValueError("Unterminated bencode integer")
+            return end + 1
+
+        if token == b'l':
+            i += 1
+            while True:
+                if i >= len(data):
+                    raise ValueError("Unterminated bencode list")
+                if data[i:i + 1] == b'e':
+                    return i + 1
+                i = _parse_at(i)
+
+        if token == b'd':
+            i += 1
+            while True:
+                if i >= len(data):
+                    raise ValueError("Unterminated bencode dictionary")
+                if data[i:i + 1] == b'e':
+                    return i + 1
+                i = _parse_at(i)  # key
+                i = _parse_at(i)  # value
+
+        if b'0' <= token <= b'9':
+            colon = data.find(b':', i)
+            if colon == -1:
+                raise ValueError("Invalid bencode string length")
+            try:
+                strlen = int(data[i:colon])
+            except ValueError as e:
+                raise ValueError("Invalid bencode string length") from e
+            end = colon + 1 + strlen
+            if end > len(data):
+                raise ValueError("Bencode string exceeds available data")
+            return end
+
+        raise ValueError(f"Invalid bencode token at offset {i}: {token!r}")
+
+    return _parse_at(start)
+
 def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = None) -> dict:
     """
     Parse a PEX (Peer Exchange) message and extract peer lists.
@@ -469,18 +525,13 @@ class Peer():
         - Followed by actual metadata bytes if msg_type=1
         """
         print("handle_metadata_message called")
-        # Find where bencoded dict ends
-        # The dict is terminated by 'e', and metadata follows
-        dict_end = payload.find(b'ee') + 2  # +2 to include the 'ee'
-        if dict_end < 2:
-            dict_end = payload.find(b'e') + 1
-        if dict_end <= 0:
-            raise InvalidResponseException(self.peer, "Invalid metadata message header")
-            
-        bencoded_dict = payload[:dict_end]
-        metadata_bytes = payload[dict_end:]
-        
+
         try:
+            # slice message
+            dict_end = _find_bencode_end(payload)
+            bencoded_dict = payload[:dict_end]
+            metadata_bytes = payload[dict_end:]
+            
             msg_dict: dict[bytes, Any] = bencodepy.decode(bencoded_dict)  # type: ignore
             msg_type = msg_dict.get(b'msg_type', -1)
             piece = msg_dict.get(b'piece', 0)
