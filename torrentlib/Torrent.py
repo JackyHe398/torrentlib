@@ -48,6 +48,19 @@ def _parse_torrent_file(filename: str) -> Optional[dict[str, Any]]:
     return data_serializable
 
 
+def _count_pieces(pieces: Any) -> Optional[int]:
+    """Count torrent pieces across parser output shapes."""
+    if pieces is None:
+        return None
+    if isinstance(pieces, list):
+        return len(pieces)
+    if isinstance(pieces, bytes):
+        return len(pieces) // 20
+    if isinstance(pieces, str):
+        return len(pieces) // 40
+    return None
+
+
 class TorrentStatus(Enum):
     COMPLETED = 1
     STARTED = 2
@@ -176,8 +189,8 @@ class Torrent:
         
         name = info.get('name')
         piece_length = info.get('piece length')
-        pieces_hex = info.get('pieces', '')
-        num_pieces = len(pieces_hex) // 40  # Each SHA-1 piece hash is 20 bytes = 40 hex chars
+        pieces = info.get('pieces')
+        num_pieces = _count_pieces(pieces)
         
         # Calculate total size
         total_size = 0
