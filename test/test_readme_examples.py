@@ -1,206 +1,68 @@
-"""Test script to validate README examples"""
-import sys
+"""Deterministic checks for README examples and public API imports."""
 
-def test_imports():
-    """Test all imports from README"""
-    print("Testing imports...")
-    try:
-        from torrentlib import Torrent, TorrentStatus, Peer
-        from torrentlib.Tracker import Check, Query
-        print("✓ All imports successful")
-        return True
-    except Exception as e:
-        print(f"✗ Import failed: {e}")
-        return False
+from torrentlib import Peer, Torrent, TorrentStatus
+from torrentlib.Tracker import Check, Query, TorrentStatus as TrackerTorrentStatus
+from torrentlib.Tracker.TrackerQueryException import TrackerQueryException
 
-def test_torrent_from_file():
-    """Test Torrent.from_file() example"""
-    print("\nTesting Torrent.from_file()...")
-    try:
-        from torrentlib import Torrent
-        # This will fail if file doesn't exist, but syntax should be correct
-        print("✓ Syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        return False
 
-def test_minimal_torrent():
-    """Test minimal torrent creation"""
-    print("\nTesting minimal Torrent creation...")
-    try:
-        from torrentlib import Torrent, TorrentStatus
-        
-        # Create minimal torrent
-        torrent = Torrent(
-            info_hash="1234567890abcdef1234567890abcdef12345678"
-        )
-        print(f"✓ Created minimal torrent: {torrent.info_hash}")
-        
-        # Create with additional info
-        torrent2 = Torrent(
-            info_hash="1234567890abcdef1234567890abcdef12345678",
-            total_size=1145141919810, 
-            left=1145141919810,
-            downloaded=0, 
-            uploaded=0,
-            event=TorrentStatus.STOPPED,
-            name="example_file.iso",
-            piece_length=None,
-            num_pieces=None
-        )
-        print(f"✓ Created torrent with additional info: {torrent2.name}")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+def test_public_imports_are_available():
+    assert Torrent is not None
+    assert TorrentStatus is not None
+    assert Peer is not None
+    assert Check is not None
+    assert Query is not None
 
-def test_check_tracker_syntax():
-    """Test Check.single/multiple syntax"""
-    print("\nTesting Check tracker syntax...")
-    try:
-        from torrentlib.Tracker import Check
-        # Just verify the syntax is correct, don't actually call
-        print("✓ Check.single() syntax is correct")
-        print("✓ Check.http() syntax is correct")
-        print("✓ Check.udp() syntax is correct")
-        print("✓ Check.multiple() syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        return False
 
-def test_query_tracker_syntax():
-    """Test Query.single syntax"""
-    print("\nTesting Query tracker syntax...")
-    try:
-        from torrentlib import Torrent, TorrentStatus
-        from torrentlib.Tracker import Query
-        
-        # Create a torrent object
-        torrent = Torrent(
-            info_hash="1234567890abcdef1234567890abcdef12345678"
-        )
-        peer_id = "-robots-testing12345"
-        
-        # Verify parameter names are correct
-        print("✓ Query.single() syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+def test_minimal_torrent_creation_matches_readme():
+    torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
 
-def test_peer_communication_syntax():
-    """Test Peer communication syntax"""
-    print("\nTesting Peer communication syntax...")
-    try:
-        from torrentlib import Torrent, Peer
-        from time import sleep
-        
-        torrent = Torrent(
-            info_hash="1234567890abcdef1234567890abcdef12345678"
-        )
-        peer_id = "-robots-testing12345"
-        
-        print("✓ Peer() constructor syntax is correct")
-        print("✓ Context manager syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    assert torrent.info_hash == "1234567890abcdef1234567890abcdef12345678"
+    assert torrent.event is TorrentStatus.STARTED
+    assert torrent.left == 0
 
-def test_metadata_download_syntax():
-    """Test metadata download syntax"""
-    print("\nTesting metadata download syntax...")
-    try:
-        from torrentlib import Torrent, Peer
-        
-        torrent = Torrent(
-            info_hash="1234567890abcdef1234567890abcdef12345678"
-        )
-        peer_id = "-robots-testing12345"
-        
-        print("✓ request_all_metadata() syntax is correct")
-        print("✓ Metadata access syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
-def test_complete_example_syntax():
-    """Test complete magnet link example syntax"""
-    print("\nTesting complete example syntax...")
-    try:
-        from torrentlib import Torrent, Peer
-        from torrentlib.Tracker import Query, TorrentStatus
-        
-        info_hash = "1234567890abcdef1234567890abcdef12345678"
-        torrent = Torrent(info_hash=info_hash)
-        peer_id = "-robots-testing12345"
-        
-        print("✓ Complete example syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+def test_explicit_torrent_creation_matches_readme():
+    torrent = Torrent(
+        info_hash="1234567890abcdef1234567890abcdef12345678",
+        total_size=1145141919810,
+        left=1145141919810,
+        downloaded=0,
+        uploaded=0,
+        event=TorrentStatus.STOPPED,
+        name="example_file.iso",
+        piece_length=None,
+        num_pieces=None,
+    )
 
-def test_error_handling_syntax():
-    """Test error handling example syntax"""
-    print("\nTesting error handling syntax...")
-    try:
-        from torrentlib.Tracker import Query, TrackerQueryException
-        from torrentlib import TorrentStatus
-        
-        print("✓ TrackerQueryException import is correct")
-        print("✓ Error handling syntax is correct")
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    assert torrent.name == "example_file.iso"
+    assert torrent.event is TorrentStatus.STOPPED
+    assert torrent.left == 1145141919810
 
-def main():
-    print("=" * 60)
-    print("README Example Validation")
-    print("=" * 60)
-    
-    tests = [
-        test_imports,
-        test_torrent_from_file,
-        test_minimal_torrent,
-        test_check_tracker_syntax,
-        test_query_tracker_syntax,
-        test_peer_communication_syntax,
-        test_metadata_download_syntax,
-        test_complete_example_syntax,
-        test_error_handling_syntax,
-    ]
-    
-    results = []
-    for test in tests:
-        results.append(test())
-    
-    print("\n" + "=" * 60)
-    print(f"Results: {sum(results)}/{len(results)} tests passed")
-    print("=" * 60)
-    
-    if all(results):
-        print("\n✓ All README examples are syntactically correct!")
-        return 0
-    else:
-        print("\n✗ Some examples have issues")
-        return 1
 
-if __name__ == "__main__":
-    sys.exit(main())
+def test_tracker_check_api_matches_readme():
+    assert hasattr(Check, "auto")
+    assert hasattr(Check, "http")
+    assert hasattr(Check, "udp")
+    assert hasattr(Check, "multiple")
+
+
+def test_tracker_query_api_matches_readme():
+    torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
+    peer_id = "-robots-testing12345"
+
+    assert torrent.info_hash
+    assert peer_id.startswith("-robots-")
+    assert hasattr(Query, "single")
+    assert hasattr(Query, "multi")
+
+
+# def test_peer_construction_matches_readme():
+#     torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
+#     peer = Peer(("127.0.0.1", 6881), torrent, "-robots-testing12345")
+#
+#     assert peer.torrent is torrent
+
+
+def test_exception_imports_match_readme():
+    assert TrackerQueryException is not None
+    assert TrackerTorrentStatus is TorrentStatus
