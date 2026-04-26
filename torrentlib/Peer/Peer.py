@@ -126,9 +126,22 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
                 ip_packed, port = struct.unpack("!16sH", peer_bytes)
                 # Extract IPv6 address (16 bytes)
                 ip = socket.inet_ntop(socket.AF_INET6, ip_packed)
-                
-                
-                result['added6']. append({'ip': ip, 'port': port})
+
+                peer_info = {
+                    'ip': ip,
+                    'port': port,
+                }
+
+                if flags:
+                    peer_info |= {
+                        'encrypted': bool(flags & 0x01),
+                        'seed': bool(flags & 0x02),
+                        'utp': bool(flags & 0x04),
+                        'holepunch': bool(flags & 0x08),
+                        'outgoing': bool(flags & 0x10),
+                    }
+
+                result['added6'].append(peer_info)
         
         # Parse dropped peers (IPv4)
         if b'dropped' in pex_data: 
@@ -150,7 +163,7 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
                     peer_data = dropped6_bytes[i:i+18]
                     # IPv6 address (16 bytes)
                     ipv6_bytes = peer_data[0:16]
-                    ipv6 = ':'.join(f'{b:02x}' for b in ipv6_bytes)
+                    ipv6 = socket.inet_ntop(socket.AF_INET6, ipv6_bytes)
                     port = int.from_bytes(peer_data[16:18], 'big')
                     
                     result['dropped6'].append({'ip': ipv6, 'port': port})
@@ -484,7 +497,7 @@ class Peer():
                 print(f"Peer has metadata: {self.metadata_size} bytes")
         
         # Check if this is PEX
-        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_pex'):
+        elif extended_id == self.peer_extension_ids.get('ut_pex'):
             pex_result = parse_pex_message(payload, self.peer)
             
             # Thread-safe peer dict modifications
@@ -510,7 +523,7 @@ class Peer():
                         del self.torrent.peers6[(ip, port)]
         
         # Check if this is metadata
-        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_metadata'): 
+        elif extended_id == self.peer_extension_ids.get('ut_metadata'):
             self._handle_metadata_message(payload)
         
         else:
