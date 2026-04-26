@@ -176,7 +176,8 @@ class Torrent:
         
         name = info.get('name')
         piece_length = info.get('piece length')
-        num_pieces = len(info.get('pieces', '')) // 20  # Each piece hash is 20 bytes
+        pieces_hex = info.get('pieces', '')
+        num_pieces = len(pieces_hex) // 40  # Each SHA-1 piece hash is 20 bytes = 40 hex chars
         
         # Calculate total size
         total_size = 0
