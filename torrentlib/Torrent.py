@@ -216,7 +216,7 @@ class Torrent:
     def set_event(self, event: TorrentStatus):
         self.event = event   
      
-    def get_files(self) -> Optional[dict[str, dict]]:
+    def get_files_info(self) -> Optional[dict[str, dict]]:
         """
         Get file list as {hash_hex: {'name': str, 'length': int, 'path': list}}.
         Uses lazy loading - only parses metadata once, then caches result.
@@ -241,12 +241,18 @@ class Torrent:
             # Parse metadata and build cache
             import bencodepy
             info_dict: dict[bytes, Any] = bencodepy.decode(self.metadata) # type: ignore
+            if not isinstance(info_dict, dict):
+                raise ValueError("Torrent metadata info dictionary is malformed")
             self._file_cache = {}
             
             if b'files' in info_dict:
                 # Multi-file torrent
                 for file_info in info_dict[b'files']:
+                    if not isinstance(file_info, dict):
+                        raise ValueError("Torrent file entry is malformed")
                     if b'hash' in file_info:
+                        if b'path' not in file_info or b'length' not in file_info:
+                            raise ValueError("Torrent file entry missing required fields")
                         hash_hex = file_info[b'hash'].hex()
                         path = [p.decode('utf-8') for p in file_info[b'path']]
                         self._file_cache[hash_hex] = {
@@ -257,6 +263,8 @@ class Torrent:
             else:
                 # Single-file torrent
                 if b'pieces' in info_dict:
+                    if b'name' not in info_dict or b'length' not in info_dict:
+                        raise ValueError("Single-file torrent metadata missing required fields")
                     # Use first 32 bytes of pieces hash as file identifier
                     hash_hex = info_dict[b'pieces'][:32].hex()
                     name = info_dict[b'name'].decode('utf-8')
@@ -270,7 +278,7 @@ class Torrent:
     
     def get_file_by_hash(self, hash_hex: str) -> Optional[dict]:
         """Get file info by hash. Returns None if not found."""
-        files = self.get_files()
+        files = self.get_files_info()
         return files.get(hash_hex) if files else None
     
     def update_from_metadata(self, metadata: bytes):
@@ -295,6 +303,8 @@ class Torrent:
             
             # Decode and update fields
             info: dict[bytes, Any] = bencodepy.decode(metadata)  # type: ignore
+            if not isinstance(info, dict):
+                raise ValueError("Metadata info dictionary is malformed")
             
             # Update name if not set
             if self.name is None and b'name' in info:
@@ -311,7 +321,11 @@ class Torrent:
             # Recalculate total_size from metadata
             if b'files' in info:
                 # Multi-file torrent
-                calculated_size = sum(f[b'length'] for f in info[b'files'])
+                calculated_size = 0
+                for file_info in info[b'files']:
+                    if not isinstance(file_info, dict) or b'length' not in file_info:
+                        raise ValueError("Metadata file entry missing required length")
+                    calculated_size += file_info[b'length']
             else:
                 # Single-file torrent
                 calculated_size = info.get(b'length', 0)

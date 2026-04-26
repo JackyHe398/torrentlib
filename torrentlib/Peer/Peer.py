@@ -62,7 +62,7 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
             added6_bytes = pex_data[b'added6']
             flags6_bytes = pex_data.get(b'added6.f', b'')
             for offset in range(0, len(added6_bytes), 18):
-                if (offset + 18 <= len(added6_bytes)):
+                if not (offset + 18 <= len(added6_bytes)):
                     break
                 peer_bytes = added6_bytes[offset:offset + 18]
                 flags = flags6_bytes[offset//18] if offset//18 < len(flags6_bytes) else 0 # Extract flags if available
@@ -404,6 +404,8 @@ class Peer():
     def _handle_extended_message(self, payload: bytes):
         """Handle extended messages (PEX, metadata, etc.)."""
         print("_handle_extended_message called")
+        if not payload:
+            raise InvalidResponseException(self.peer, "Empty extended message payload")
         extended_id = payload[0]
         payload = payload[1:]
         
@@ -472,6 +474,8 @@ class Peer():
         dict_end = payload.find(b'ee') + 2  # +2 to include the 'ee'
         if dict_end < 2:
             dict_end = payload.find(b'e') + 1
+        if dict_end <= 0:
+            raise InvalidResponseException(self.peer, "Invalid metadata message header")
             
         bencoded_dict = payload[:dict_end]
         metadata_bytes = payload[dict_end:]

@@ -42,7 +42,7 @@ print(torrent.total_size)
 print(torrent.piece_length)
 print(torrent.num_pieces)
 
-files = torrent.get_files()
+files = torrent.get_files_info()
 if files:
     for file_hash, file_info in files.items():
         print(file_hash, file_info["name"], file_info["length"])
@@ -231,7 +231,7 @@ with Peer(peer_addr, torrent, peer_id) as peer:
         print(torrent.name)
         print(torrent.total_size)
 
-        files = torrent.get_files()
+        files = torrent.get_files_info()
         if files:
             for file_hash, file_info in files.items():
                 print(file_hash, file_info["name"], file_info["length"])
@@ -267,7 +267,7 @@ for peer_addr in response.get("peers", [])[:5]:
 
             if torrent.metadata is not None:
                 print(torrent)
-                files = torrent.get_files()
+                files = torrent.get_files_info()
                 if files:
                     for _, file_info in files.items():
                         print(file_info["name"], file_info["length"])
@@ -327,7 +327,7 @@ from torrentlib.Peer.PeerCommunicationException import (
 ## Notes
 
 - `TorrentStatus` currently provides `COMPLETED`, `STARTED`, and `STOPPED`.
-- `Torrent.get_files()` returns `None` until metadata is available.
+- `Torrent.get_files_info()` returns `None` until metadata is available.
 - `Torrent.update_from_metadata()` verifies that received metadata matches the original info hash.
 - `Query.single()` and `Query.multi()` update the `Torrent` peer caches automatically.
 

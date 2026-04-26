@@ -58,7 +58,10 @@ def _parse_http_tracker_response(response_bdecode: dict[bytes, Any]) -> Dict[str
     Parse bencode response and decode all byte strings.
     """
     response = response_bdecode.copy()  # Don't mutate input
-    response[b"peers"] = _get_peer_from_bytes(response[b"peers"])
+    try: 
+        response[b"peers"] = _get_peer_from_bytes(response[b"peers"])
+    except KeyError: # handle missing keys, not standard BEP behavior
+        response[b"peers"] = []
     if b"peers6" in response:
         response[b"peers6"] = _get_peer6_from_bytes(response[b"peers6"])
 
@@ -82,6 +85,8 @@ def _validate_udp_connect_response(response: bytes, transaction_id: int, url: st
     """
     Validate UDP connect response and return connection ID.
     """
+    if len(response) < 16:
+        raise InvalidResponseError(url=url, message="UDP connect response too short")
     action, resp_transaction_id, connection_id = struct.unpack("!iiq", response[:16])
     if action != 0 or resp_transaction_id != transaction_id:
         raise InvalidResponseError(url=url)
@@ -92,6 +97,8 @@ def _parse_udp_announce_response(response: bytes, expected_transaction_id: int) 
     """
     Parse UDP announce response.
     """
+    if len(response) < 20:
+        raise InvalidResponseError(message="UDP announce response too short")
     header = response[:20]
     peer_bytes = response[20:]
     
@@ -183,7 +190,15 @@ class Query:
             
             status_code = response.status_code // 100 * 100  # Get the first digit of the status code
             if status_code == 200:
-                response_bdecode = dict(bec.decode(response.content))
+                try:
+                    decoded_response = bec.decode(response.content)
+                except Exception as e:
+                    raise InvalidResponseError(url=url, message="Failed to decode tracker response") from e
+
+                if not isinstance(decoded_response, dict):
+                    raise InvalidResponseError(url=url, message="Tracker response is not a dictionary")
+
+                response_bdecode = dict(decoded_response)
                 response_decode = _parse_http_tracker_response(response_bdecode)
                 
                 # Update torrent with peers
@@ -202,6 +217,8 @@ class Query:
         except (requests.exceptions.Timeout, builtins.TimeoutError) as e:
             # Catch both requests timeout and built-in socket timeout
             raise TimeoutError(url=url) from e
+        except InvalidResponseError:
+            raise
         except requests.exceptions.RequestException as e:
             raise UnexpectedError(url=url, e=e)
 

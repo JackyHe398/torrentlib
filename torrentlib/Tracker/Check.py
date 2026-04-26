@@ -68,6 +68,9 @@ class Check:
         Check if a given UDP tracker URL is reachable and responds correctly.
         """
         def response_validator(response, id)-> bool:
+            if len(response) < 16:
+                logging.debug(f"❌ {url}: Response too short")
+                return False
             action, transaction_id, connection_id = struct.unpack("!iiq", response[:16])
             if action == ACTION and transaction_id == id:
                 logging.debug(f"✅ {url}: Active")
