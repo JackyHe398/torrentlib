@@ -11,7 +11,7 @@ warnings.warn(
 
 setup(
     name="torrentlib",
-    version="1.0.2",
+    version="1.0.3",
     author="JackyHe398",
     author_email="hekinghung@gmail.com",
     description="BitTorrent utilities for querying trackers and peers",
