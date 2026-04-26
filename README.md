@@ -19,6 +19,8 @@ It does not manage piece downloads/uploads for complete content transfer.
 pip install torrentlib
 ```
 
+Supports Python 3.10 through 3.14.
+
 ## Public API
 
 ```python
