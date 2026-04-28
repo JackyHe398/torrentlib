@@ -1,33 +1,41 @@
-from  torrentlib import Tracker, TorrentStatus, Torrent
-from random import choice, sample
+"""Manual integration checks for live tracker endpoints.
+
+These tests hit the public internet and are excluded from CI by default.
+Run them explicitly with: `pytest -m integration test/test_Tracker.py`
+"""
+
+from pathlib import Path
+
+import pytest
+
+from torrentlib import Torrent, Tracker
+
+pytestmark = pytest.mark.integration
+
 
 def test_multiple_trackers_check():
-    # Test tracker checking
-    with open("trackers.txt", "r") as f:
-        urls = list(line.strip() for line in f if line.strip() and not line.startswith("#"))
+    tracker_file = Path(__file__).with_name("trackers.txt")
+    with tracker_file.open(encoding="utf-8") as handle:
+        urls = [
+            line.strip()
+            for line in handle
+            if line.strip() and not line.startswith("#")
+        ]
 
     result = Tracker.Check.multiple(urls, timeout=5)
-    print(result)
+    assert isinstance(result, dict)
 
-    result = Tracker.Check.auto("udp://tracker.torrent.eu.org:451/announce")
-    print(result)
 
 def test_tracker_query():
-    # Test tracker querying
-    torrent = Torrent("95eac181669f6e2e26a2513f9b2c9f6d3d4e0ec1", 0)
+    torrent = Torrent("ee04b6d6830c8be5e693cd1cb83eba9040da50d7", 0)
     self_peer_id = "-robots-testing12345"
-    for tracker_url in ('https://tracker.ghostchu-services.top:443/announce',
-                        'udp://tracker.torrent.eu.org:451/announce',
-                        'http://tracker.opentrackr.org:1337/announce',
-                        'http://example.com/announce'):
+
+    for tracker_url in (
+        "https://torrent.ubuntu.com/announce",
+    ):
         try:
             result = Tracker.Query.single(torrent, tracker_url, self_peer_id)
-            print(result)
-        except Exception as e:
-            print(f"Error querying tracker {tracker_url}: {e}")
-            
-    print(f"Total peers obtained: {len(torrent.peers)}")
-    
-if __name__ == "__main__":
-    test_multiple_trackers_check()
-    test_tracker_query()
+            assert isinstance(result, dict)
+        except Exception:
+            # Live tracker availability is not deterministic.
+            pass

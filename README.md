@@ -1,42 +1,17 @@
 # torrentlib
 
-**This library is currently under development, it may change rapidly. Please use with care**
+Python helpers for BitTorrent tracker queries, peer communication, and metadata inspection.
 
-## Introduction
+`torrentlib` is not a full BitTorrent client. It can:
 
-torrentlib is a Python library for torrent information retrieval (peers and metadata), providing tools for tracker communication, peer protocol implementation, and torrent metadata handling. This library aims to facilitate the development of BitTorrent clients and related applications by offering a modular and easy-to-use interface, while not being a full-fledged BitTorrent client itself. Hence, it does not handle downloading or uploading of torrent data other than metadata.
+- load `.torrent` metadata
+- announce to HTTP and UDP trackers
+- collect IPv4 and IPv6 peer lists
+- connect to peers that support the extension protocol
+- download torrent metadata from peers via `ut_metadata`
+- process peer exchange (`ut_pex`) messages
 
-#### Important Notice:
-**Please do not use this library for leeching.** This library is intended for legitimate purposes such as:
-- Checking tracker health and availability
-- Analyzing torrent metadata
-- Building torrent clients that properly seed content back to the community
-- Educational purposes to understand BitTorrent protocols
-
-BitTorrent networks thrive on reciprocity. If you download content, please contribute back by seeding. Leeching (downloading without seeding) degrades the network for everyone and violates the spirit of peer-to-peer file sharing.
-
-## Features
-
-### Torrent Management
-
-- Parse .torrent files
-- Torrent metadata handling
-- File information extraction
-
-### Peer Discovery
-
-- Query trackers over UDP and HTTP protocols
-- Support for full parameter customization
-- Peer Exchange (PEX) support - exchange peer lists with connected peers
-
-### Metadata management
-
-- Retrieve torrent metadata from peers using the BitTorrent Extension Protocol (BEP 9)
-
-### Tracker Operations
-
-- Check Tracker Status - Verify if tracker(s) is online and responsive
-
+It does not manage piece downloads/uploads for complete content transfer.
 
 ## Installation
 
@@ -44,337 +19,318 @@ BitTorrent networks thrive on reciprocity. If you download content, please contr
 pip install torrentlib
 ```
 
-## Usage
+## Public API
 
-### Working with Torrents
+```python
+from torrentlib import Torrent, TorrentStatus, Peer
+from torrentlib.Tracker import Check, Query
+```
 
-Other than checking tracker status, a Torrent object is needed for queries. This is the foundation for tracker queries and peer communication. There are two main ways to create a Torrent object: loading from a .torrent file or creating a minimal torrent using just the info_hash. Torrent objects created from both methods can be used interchangeably.
+## Working With Torrents
 
-Loading from a .torrent file:
+Create a `Torrent` from a `.torrent` file when you already have metadata:
+
 ```python
 from torrentlib import Torrent
 
-# Load from .torrent file
-torrent = Torrent.from_file(filename="example.torrent")
+torrent = Torrent.from_file("example.torrent")
 
-print(torrent)  # Human-readable representation
-# Output: Torrent('example.iso', hash=3b245504c0e113..., size=5.7 GiB, progress=0.0%, peers=0)
+print(torrent)
+print(torrent.name)
+print(torrent.info_hash)
+print(torrent.total_size)
+print(torrent.piece_length)
+print(torrent.num_pieces)
 
-print(f"Name: {torrent.name}")
-print(f"Info hash: {torrent.info_hash}")
-print(f"Total size: {torrent.total_size} bytes")
-print(f"Pieces: {torrent.num_pieces}")
-print(f"Piece length: {torrent.piece_length}")
-
-# Access file information
-files = torrent.get_files()
-for file_hash, file_info in files.items():
-    print(f"File: {file_info['name']}, Size: {file_info['length']} bytes")
+files = torrent.get_files_info()
+if files:
+    for file_hash, file_info in files.items():
+        print(file_hash, file_info["name"], file_info["length"])
 ```
 
-Creating a minimal torrent using just the info_hash:
+Create a minimal `Torrent` when you only have an info hash, for example from a magnet link:
+
 ```python
 from torrentlib import Torrent, TorrentStatus
 
-# Create minimal torrent from info_hash (useful for magnet links or metadata downloads)
 torrent = Torrent(
     info_hash="1234567890abcdef1234567890abcdef12345678"
 )
 
-# or provide additional information
 torrent = Torrent(
     info_hash="1234567890abcdef1234567890abcdef12345678",
-    total_size = 1145141919810, left = 1145141919810,
-    downloaded = 0, uploaded = 0,
-    event = TorrentStatus.STOPPED,
-    name = "example_file.iso",
-    piece_length = None,
-    num_pieces = None
+    total_size=1145141919810,
+    left=1145141919810,
+    downloaded=0,
+    uploaded=0,
+    event=TorrentStatus.STOPPED,
+    name="example_file.iso",
+    piece_length=None,
+    num_pieces=None,
 )
 ```
 
-### Tracker Status Checking
+## Tracker Health Checks
 
-Torrent status check is to reduce the size of tracker lists by filtering out offline or unresponsive trackers for efficient querying. Large unfunctioning tracker can degrade performance and waste resources for a bittorrent client.
-You can check single or multiple trackers, with automatic protocol detection (HTTP/HTTPS or UDP) or by specifying the protocol explicitly.
+`Check` provides simple tracker reachability checks. Use `Check.auto()` when you want protocol detection from the URL scheme.
 
 ```python
 from torrentlib.Tracker import Check
 
-# Check single tracker with auto-detection
-Check.single("http://tracker.example.com:8080/announce", timeout=5)
-Check.single("udp://tracker.example.com:8080/announce", timeout=5)
+print(Check.auto("http://tracker.example.com:8080/announce", timeout=5))
+print(Check.auto("udp://tracker.example.com:6969/announce", timeout=5))
 
-# Or specify protocol explicitly
-Check.http("http://tracker.example.com:8080/announce", timeout=5)
-Check.udp("udp://tracker.example.com:8080/announce", timeout=5)
+print(Check.http("http://tracker.example.com:8080/announce", timeout=5))
+print(Check.udp("udp://tracker.example.com:6969/announce", timeout=5))
 
-# Check multiple trackers concurrently
 trackers = [
     "http://tracker1.example.com:8080/announce",
     "udp://tracker2.example.com:6969/announce",
 ]
+
 results = Check.multiple(trackers, timeout=5)
-for url, status in results.items():
-    print(f"{url}: {'✓' if status else '✗'}")
+for url, is_online in results.items():
+    print(url, is_online)
 ```
 
-### Tracker Queries
+## Tracker Queries
 
-Once you have a Torrent object, query trackers to get peer lists. We strongly recommend wrapping the query calls in try-except blocks to handle potential exceptions gracefully since network operations can be unreliable.:
+Tracker queries operate on a `Torrent` object, not a raw `info_hash`. The library reads `torrent.left`, `torrent.downloaded`, `torrent.uploaded`, and `torrent.event` from that object.
+
+`Query.single()` chooses HTTP or UDP based on the tracker URL:
 
 ```python
 from torrentlib import Torrent, TorrentStatus
 from torrentlib.Tracker import Query
 
-# Load torrent
-torrent = Torrent.from_file("example.torrent")
-peer_id = "-robots-testing12345"  # Your 20-byte client ID
+torrent = Torrent(
+    info_hash="1234567890abcdef1234567890abcdef12345678",
+    event=TorrentStatus.STARTED,
+)
+peer_id = "-robots-testing12345"
 
-# Basic query with auto-protocol detection
 response = Query.single(
-    info_hash=torrent.info_hash,
+    torrent=torrent,
     url="udp://tracker.opentrackr.org:1337/announce",
     peer_id=peer_id,
-    event=TorrentStatus.STARTED,
-    port=6881
-)
-
-# Full parameter query
-response = Query.single(
-    info_hash=torrent.info_hash,
-    url="http://tracker.example.com:8080/announce",
-    peer_id=peer_id,
-    event=TorrentStatus.STARTED,
-    left=torrent.left,           # Use torrent's actual values
-    downloaded=torrent.downloaded,
-    uploaded=torrent.uploaded,
     port=6881,
-    num_want=50,           # Number of peers wanted
-    timeout=10
+    timeout=10,
 )
 
-print(f"Interval: {response['interval']}s")
-print(f"Seeders: {response.get('seeders', 0)}")
-print(f"Leechers: {response.get('leechers', 0)}")
-print(f"Peers: {len(response.get('peers', []))}")
-
-# Store peers in torrent object
-for ip, port in response.get('peers', []):
-    torrent.peers[(ip, port)] = {}
+print(response["interval"])
+print(response.get("seeders"))
+print(response.get("leechers"))
+print(len(response.get("peers", [])))
+print(len(response.get("peers6", [])))
 ```
 
-### Peer Communication
-
-Connect to peers to exchange metadata and peer lists using the BitTorrent peer protocol. PEX data is exchanged automatically when connected to a peer that supports it, no request is needed or can speed it up.:
+You can also query multiple trackers concurrently:
 
 ```python
-from torrentlib import Torrent, Peer
-from time import sleep
-
-# Create torrent (from file or just info_hash)
-torrent = Torrent(
-    info_hash="1234567890abcdef1234567890abcdef12345678"
-)
-
-# Your peer ID (20 characters)
-peer_id = "-robots-testing12345"
-
-# Connect to a peer (get peer addresses from tracker)
-peer_addr = ('192.168.1.100', 6881)
-
-with Peer(peer_addr, torrent, peer_id) as peer:
-    print(f"Connected: {peer}")
-    print(f"Supports extensions: {peer.peer_supports_extensions}")
-    print(f"Extension IDs: {peer.peer_extension_ids}")
-    
-    # Exchange peer lists via PEX (Peer Exchange)
-    # Automatically happens when reading messages
-    sleep(20)  # Wait to receive PEX messages
-    peer.read_all()
-    
-    print(f"Discovered peers: {len(torrent.peers)}")
-    for (ip, port), metadata in torrent.peers.items():
-        print(f"  {ip}:{port} - {metadata}")
-```
-
-### Metadata Download (BEP 9)
-
-Download torrent metadata from peers when you only have the info_hash (e.g., from magnet links):
-
-```python
-from torrentlib import Torrent, Peer
-
-# Create minimal torrent with only info_hash
-torrent = Torrent(
-    info_hash="1234567890abcdef1234567890abcdef12345678"
-)
-
-peer_id = "-robots-testing12345"
-peer_addr = ('192.168.1.100', 6881)
-
-with Peer(peer_addr, torrent, peer_id) as peer:
-    # Request all metadata pieces
-    peer.request_all_metadata()
-    
-    # Read responses
-    peer.read_all()
-    
-    # Metadata is automatically assembled and verified
-    if torrent.metadata:
-        print("Metadata downloaded successfully!")
-        print(torrent)  # Now shows complete info
-        print(f"Name: {torrent.name}")
-        print(f"Size: {torrent.total_size} bytes")
-        print(f"Pieces: {torrent.num_pieces}")
-        
-        # Access files
-        files = torrent.get_files()
-        for file_hash, file_info in files.items():
-            print(f"  {file_info['name']}: {file_info['length']} bytes")
-    else:
-        print("Failed to download metadata")
-```
-
-### Complete Example: Magnet Link to File List
-
-```python
-from torrentlib import Torrent, Peer, TorrentStatus
 from torrentlib.Tracker import Query
 
-# 1. Parse magnet link (simplified - extract info_hash)
+responses = Query.multi(
+    torrent=torrent,
+    urls=[
+        "udp://tracker.opentrackr.org:1337/announce",
+        "http://tracker.example.com:8080/announce",
+    ],
+    peer_id=peer_id,
+    port=6881,
+    timeout=10,
+)
+
+for url, result in responses.items():
+    if "error" in result:
+        print(url, result["error"])
+    else:
+        print(url, len(result.get("peers", [])))
+```
+
+Successful tracker queries automatically merge returned peers into:
+
+- `torrent.peers` for IPv4 peers
+- `torrent.peers6` for IPv6 peers
+
+## Peer Communication
+
+Use `Peer` as a context manager. Connecting performs the BitTorrent handshake. If the remote peer supports extensions, the library also sends an extension handshake and reads the initial extension messages.
+
+```python
+from time import sleep
+from torrentlib import Peer, Torrent
+
+torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
+peer_id = "-robots-testing12345"
+peer_addr = ("127.0.0.1", 6881)
+
+with Peer(peer_addr, torrent, peer_id) as peer:
+    print(peer)
+    print(peer.peer_supports_extensions)
+    print(peer.peer_extension_ids)
+
+    sleep(2)
+    peer.read_all()
+
+    print(len(torrent.peers))
+    print(len(torrent.peers6))
+```
+
+To keep long-lived connections open, call `send_keep_alive()` periodically yourself:
+
+```python
+import threading
+from time import sleep
+from torrentlib import Peer, Torrent
+from torrentlib.Peer.PeerCommunicationException import SocketClosedException
+
+def keep_alive_loop(peer: Peer, stop_event: threading.Event, interval: int = 120):
+    while not stop_event.is_set():
+        sleep(interval)
+        try:
+            peer.send_keep_alive()
+        except SocketClosedException:
+            break
+
+torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
+peer_id = "-robots-testing12345"
+peer_addr = ("127.0.0.1", 6881)
+stop_event = threading.Event()
+
+try:
+    with Peer(peer_addr, torrent, peer_id) as peer:
+        thread = threading.Thread(
+            target=keep_alive_loop,
+            args=(peer, stop_event),
+            daemon=True,
+        )
+        thread.start()
+        peer.read_all()
+finally:
+    stop_event.set()
+```
+
+## Metadata Download
+
+If you start with only an info hash, you can fetch metadata from a peer that supports `ut_metadata`. Once the full metadata is assembled and verified, the library updates the existing `Torrent` object in place.
+
+```python
+from torrentlib import Peer, Torrent
+
+torrent = Torrent(info_hash="1234567890abcdef1234567890abcdef12345678")
+peer_id = "-robots-testing12345"
+peer_addr = ("127.0.0.1", 6881)
+
+with Peer(peer_addr, torrent, peer_id) as peer:
+    if peer.metadata_size is not None:
+        peer.request_all_metadata()
+        peer.read_all()
+
+    if torrent.metadata is not None:
+        print("Metadata downloaded")
+        print(torrent.name)
+        print(torrent.total_size)
+
+        files = torrent.get_files_info()
+        if files:
+            for file_hash, file_info in files.items():
+                print(file_hash, file_info["name"], file_info["length"])
+```
+
+## Magnet To Metadata Example
+
+```python
+from torrentlib import Peer, Torrent, TorrentStatus
+from torrentlib.Tracker import Query
+
 info_hash = "1234567890abcdef1234567890abcdef12345678"
-
-# 2. Create minimal torrent
-torrent = Torrent(info_hash=info_hash)
-
-# 3. Query tracker for peers
 tracker_url = "udp://tracker.opentrackr.org:1337/announce"
 peer_id = "-robots-testing12345"
 
+torrent = Torrent(info_hash=info_hash, event=TorrentStatus.STARTED)
+
 response = Query.single(
-    info_hash=info_hash,
+    torrent=torrent,
     url=tracker_url,
     peer_id=peer_id,
-    event=TorrentStatus.STARTED,
-    port=6881
+    port=6881,
 )
 
-print(f"Found {len(response.get('peers', []))} peers")
-
-# 4. Try to get metadata from first peer
-for ip, port in response.get('peers', [])[:5]:  # Try first 5 peers
+for peer_addr in response.get("peers", [])[:5]:
     try:
-        with Peer((ip, port), torrent, peer_id) as peer:
+        with Peer(peer_addr, torrent, peer_id) as peer:
+            if peer.metadata_size is None:
+                continue
+
             peer.request_all_metadata()
-            
-            if torrent.metadata:
-                print(f"\n✓ Got metadata from {ip}:{port}")
+            peer.read_all()
+
+            if torrent.metadata is not None:
                 print(torrent)
-                
-                # List all files
-                files = torrent.get_files()
+                files = torrent.get_files_info()
                 if files:
-                    print(f"\nFiles ({len(files)}):")
-                    for file_hash, file_info in files.items():
-                        print(f"  - {file_info['name']} ({file_info['length']} bytes)")
+                    for _, file_info in files.items():
+                        print(file_info["name"], file_info["length"])
                 break
-    except Exception as e:
-        print(f"✗ Failed to connect to {ip}:{port}: {e}")
+    except Exception:
         continue
-else:
-    print("Could not download metadata from any peer")
 ```
-
-## API Reference
-
-### Tracker Query Parameters
-
-#### Required:
-- `info_hash` (str): 40-character hex string of the torrent's info hash
-- `peer_id` (str): 20-character client peer ID
-- `event` (TorrentStatus): Download status - `STARTED`, `STOPPED`, `COMPLETED`, or `NONE`
-
-#### Recommended:
-
-- `left` (int): Bytes remaining to download
-- `downloaded` (int): Total bytes downloaded
-- `uploaded` (int): Total bytes uploaded
-- `port` (int): Client's listening port (required for UDP)
-
-#### Optional:
-
-- `num_want` (int): Number of peers requested (default: 50)
-- `ip_addr` (str): Client's IP address (for UDP)
-- `key` (str): Unique key for tracker recognition
-- `timeout` (int): Request timeout in seconds (default: 5)
-- `headers` (dict): Additional HTTP headers (HTTP only)
-
-### Tracker Response Fields
-
-#### Success Response:
-
-- `interval` (int): Seconds until next announce
-- `min interval` (int): Minimum announce interval
-- `seeders` (int): Number of seeders
-- `leechers` (int): Number of leechers
-- `peers` (list): List of (ip, port) tuples (IPv4)
-- `peers6` (list): List of (ip, port) tuples (IPv6)
-
-#### Error Response:
-
-- `failure reason` (str): Error message from tracker
-- `warning message` (str): Optional warning (doesn't affect other fields)
 
 ## Error Handling
 
+Tracker exceptions live in `torrentlib.Tracker.TrackerQueryException`:
+
 ```python
-from torrentlib.Tracker import Query, TrackerQueryException
-from torrentlib import TorrentStatus
+from torrentlib import Torrent, TorrentStatus
+from torrentlib.Tracker import Query
+from torrentlib.Tracker.TrackerQueryException import (
+    TrackerQueryException,
+    TimeoutError,
+    BadRequestError,
+    InvalidResponseError,
+    UnexpectedError,
+)
+
+torrent = Torrent(
+    info_hash="1234567890abcdef1234567890abcdef12345678",
+    event=TorrentStatus.STARTED,
+)
 
 try:
-    response = Query.single(
-        info_hash="...",
+    Query.single(
+        torrent=torrent,
         url="http://tracker.example.com/announce",
-        peer_id="...",
-        event=TorrentStatus.STARTED
+        peer_id="-robots-testing12345",
     )
-except TrackerQueryException as e:
-    print(f"Tracker error: {e}")
 except TimeoutError:
-    print("Request timed out")
-except Exception as e:
-    print(f"Unexpected error: {e}")
+    print("Tracker request timed out")
+except BadRequestError:
+    print("Tracker rejected the request")
+except InvalidResponseError:
+    print("Tracker returned malformed data")
+except UnexpectedError as exc:
+    print(f"Unexpected tracker error: {exc}")
+except TrackerQueryException as exc:
+    print(f"Tracker error: {exc}")
 ```
 
-### Exception Types
-#### TrackerQueryException Subclasses:
-- `TrackerQueryException`: Base exception for tracker-related errors
-- `TimeoutError`: Request exceeded timeout
-- `BadRequestError`: Invalid request parameters
-- `InvalidResponseException`: Malformed tracker response
-- `UnexpectedError`: Network or other unexpected errors
+Peer communication exceptions live in `torrentlib.Peer.PeerCommunicationException`:
 
-#### PeerCommunicationExceptions Subclasses:
-- `PeerCommunicationException`: Base exception for peer communication errors
-- `SocketClosedException`: Connection loss from peer. Rehandshake needed.
-- `InvalidResponseException`: Malformed peer response or unexpected/unsupported message
+```python
+from torrentlib.Peer.PeerCommunicationException import (
+    PeerCommunicationException,
+    SocketClosedException,
+    InvalidResponseException,
+)
+```
 
-## References and Further Reading
+## Notes
 
-[Wikipedia](https://en.wikipedia.org/wiki/BitTorrent_tracker)
-
-[CSDN](https://blog.csdn.net/zyd_15221378768/article/details/79785075)
-
-[Theory Wiki](https://wiki.theory.org/BitTorrent_Tracker_Protocol)
-
-[Concurrency Deep Dives](https://concurrencydeepdives.com/udp-tracker-protocol/)
-
-[XBTT](https://xbtt.sourceforge.net/udp_tracker_protocol.html)
-
+- `TorrentStatus` currently provides `COMPLETED`, `STARTED`, and `STOPPED`.
+- `Torrent.get_files_info()` returns `None` until metadata is available.
+- `Torrent.update_from_metadata()` verifies that received metadata matches the original info hash.
+- `Query.single()` and `Query.multi()` update the `Torrent` peer caches automatically.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Created by JackyHe398 © 2025
+MIT. See [LICENSE](LICENSE).

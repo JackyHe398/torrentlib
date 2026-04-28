@@ -8,6 +8,62 @@ from .PeerCommunicationException import *
 
 METADATA_PIECE_SIZE = 16384  # 16KB per piece (BEP 9 standard)
 
+
+def _find_bencode_end(data: bytes, start: int = 0) -> int:
+    """
+    Return the index immediately after the first complete bencoded value.
+
+    This is used for ut_metadata messages, which are framed as:
+    <bencoded dict><raw metadata bytes>
+    """
+    def _parse_at(i: int) -> int:
+        if i >= len(data):
+            raise ValueError("Unexpected end of bencoded data")
+
+        token = data[i:i + 1]
+
+        if token == b'i':
+            end = data.find(b'e', i + 1)
+            if end == -1:
+                raise ValueError("Unterminated bencode integer")
+            return end + 1
+
+        if token == b'l':
+            i += 1
+            while True:
+                if i >= len(data):
+                    raise ValueError("Unterminated bencode list")
+                if data[i:i + 1] == b'e':
+                    return i + 1
+                i = _parse_at(i)
+
+        if token == b'd':
+            i += 1
+            while True:
+                if i >= len(data):
+                    raise ValueError("Unterminated bencode dictionary")
+                if data[i:i + 1] == b'e':
+                    return i + 1
+                i = _parse_at(i)  # key
+                i = _parse_at(i)  # value
+
+        if b'0' <= token <= b'9':
+            colon = data.find(b':', i)
+            if colon == -1:
+                raise ValueError("Invalid bencode string length")
+            try:
+                strlen = int(data[i:colon])
+            except ValueError as e:
+                raise ValueError("Invalid bencode string length") from e
+            end = colon + 1 + strlen
+            if end > len(data):
+                raise ValueError("Bencode string exceeds available data")
+            return end
+
+        raise ValueError(f"Invalid bencode token at offset {i}: {token!r}")
+
+    return _parse_at(start)
+
 def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = None) -> dict:
     """
     Parse a PEX (Peer Exchange) message and extract peer lists.
@@ -62,7 +118,7 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
             added6_bytes = pex_data[b'added6']
             flags6_bytes = pex_data.get(b'added6.f', b'')
             for offset in range(0, len(added6_bytes), 18):
-                if (offset + 18 <= len(added6_bytes)):
+                if not (offset + 18 <= len(added6_bytes)):
                     break
                 peer_bytes = added6_bytes[offset:offset + 18]
                 flags = flags6_bytes[offset//18] if offset//18 < len(flags6_bytes) else 0 # Extract flags if available
@@ -70,9 +126,22 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
                 ip_packed, port = struct.unpack("!16sH", peer_bytes)
                 # Extract IPv6 address (16 bytes)
                 ip = socket.inet_ntop(socket.AF_INET6, ip_packed)
-                
-                
-                result['added6']. append({'ip': ip, 'port': port})
+
+                peer_info = {
+                    'ip': ip,
+                    'port': port,
+                }
+
+                if flags:
+                    peer_info |= {
+                        'encrypted': bool(flags & 0x01),
+                        'seed': bool(flags & 0x02),
+                        'utp': bool(flags & 0x04),
+                        'holepunch': bool(flags & 0x08),
+                        'outgoing': bool(flags & 0x10),
+                    }
+
+                result['added6'].append(peer_info)
         
         # Parse dropped peers (IPv4)
         if b'dropped' in pex_data: 
@@ -94,7 +163,7 @@ def parse_pex_message(payload: bytes, peer_addr: Optional[tuple[str, int]] = Non
                     peer_data = dropped6_bytes[i:i+18]
                     # IPv6 address (16 bytes)
                     ipv6_bytes = peer_data[0:16]
-                    ipv6 = ':'.join(f'{b:02x}' for b in ipv6_bytes)
+                    ipv6 = socket.inet_ntop(socket.AF_INET6, ipv6_bytes)
                     port = int.from_bytes(peer_data[16:18], 'big')
                     
                     result['dropped6'].append({'ip': ipv6, 'port': port})
@@ -404,6 +473,8 @@ class Peer():
     def _handle_extended_message(self, payload: bytes):
         """Handle extended messages (PEX, metadata, etc.)."""
         print("_handle_extended_message called")
+        if not payload:
+            raise InvalidResponseException(self.peer, "Empty extended message payload")
         extended_id = payload[0]
         payload = payload[1:]
         
@@ -426,7 +497,7 @@ class Peer():
                 print(f"Peer has metadata: {self.metadata_size} bytes")
         
         # Check if this is PEX
-        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_pex'):
+        elif extended_id == self.peer_extension_ids.get('ut_pex'):
             pex_result = parse_pex_message(payload, self.peer)
             
             # Thread-safe peer dict modifications
@@ -452,7 +523,7 @@ class Peer():
                         del self.torrent.peers6[(ip, port)]
         
         # Check if this is metadata
-        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_metadata'): 
+        elif extended_id == self.peer_extension_ids.get('ut_metadata'):
             self._handle_metadata_message(payload)
         
         else:
@@ -467,16 +538,13 @@ class Peer():
         - Followed by actual metadata bytes if msg_type=1
         """
         print("handle_metadata_message called")
-        # Find where bencoded dict ends
-        # The dict is terminated by 'e', and metadata follows
-        dict_end = payload.find(b'ee') + 2  # +2 to include the 'ee'
-        if dict_end < 2:
-            dict_end = payload.find(b'e') + 1
-            
-        bencoded_dict = payload[:dict_end]
-        metadata_bytes = payload[dict_end:]
-        
+
         try:
+            # slice message
+            dict_end = _find_bencode_end(payload)
+            bencoded_dict = payload[:dict_end]
+            metadata_bytes = payload[dict_end:]
+            
             msg_dict: dict[bytes, Any] = bencodepy.decode(bencoded_dict)  # type: ignore
             msg_type = msg_dict.get(b'msg_type', -1)
             piece = msg_dict.get(b'piece', 0)
