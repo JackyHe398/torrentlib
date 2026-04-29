@@ -239,7 +239,7 @@ with Peer(peer_addr, torrent, peer_id) as peer:
                 print(file_hash, file_info["name"], file_info["length"])
 ```
 
-## Magnet To Metadata Example
+## Infohash To Metadata Example
 
 ```python
 from torrentlib import Peer, Torrent, TorrentStatus
