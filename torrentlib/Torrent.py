@@ -1,10 +1,22 @@
 import threading
+import humanize
 from enum import Enum
 from typing import Any, Optional
 
-import humanize
-
 from .TorrentMetaInfo import TorrentMetaInfo
+
+
+def _count_pieces(pieces: Any) -> Optional[int]:
+    """Count torrent pieces across parser output shapes."""
+    if pieces is None:
+        return None
+    if isinstance(pieces, list):
+        return len(pieces)
+    if isinstance(pieces, bytes):
+        return len(pieces) // 20
+    if isinstance(pieces, str):
+        return len(pieces) // 40
+    return None
 
 
 class TorrentStatus(Enum):
@@ -54,18 +66,18 @@ class Torrent:
         assert left is None or (isinstance(left, int) and left >= 0), "left must be a non-negative integer or None"
 
 
-        # store incomplete field into metainfo
-        metainfo_data: dict[bytes, Any] = {b"info_hash": info_hash}
+        # Store incomplete metainfo hints. Fields that belong to the torrent info
+        # dictionary are kept inside b"info" even before the full info dict is known.
+        metainfo_data: dict[bytes, Any] = {b"info_hash": info_hash, b"info": {}}
+        info_dict: dict[bytes, Any] = metainfo_data[b"info"]
         if name is not None:
-            metainfo_data[b"name"] = name
+            info_dict[b"name"] = name.encode("utf-8") if isinstance(name, str) else name
         if piece_length is not None:
-            metainfo_data[b"piece length"] = piece_length
-        if num_pieces is not None:
-            metainfo_data[b"num_pieces"] = num_pieces
+            info_dict[b"piece length"] = piece_length
         if total_size > 0:
             metainfo_data[b"total_size"] = total_size
         self.metainfo = TorrentMetaInfo(metainfo_data)
-
+        self._num_pieces = num_pieces
         # File list cache (lazy-loaded when first accessed)
         self._file_cache: Optional[dict[str, dict]] = None  # {hash_hex: {'name': str, 'length': int, 'path': list}}
         
@@ -127,7 +139,6 @@ class Torrent:
             event=event,
             name=metainfo.name,
             piece_length=metainfo.piece_length,
-            num_pieces=metainfo.num_pieces,
         )
         torrent.metainfo = metainfo
         return torrent
@@ -184,7 +195,9 @@ class Torrent:
 
     @property
     def num_pieces(self) -> Optional[int]:
-        return self.metainfo.num_pieces
+        pieces = self.metainfo.info.get(b"pieces")
+        metainfo_num_pieces = _count_pieces(pieces)
+        return metainfo_num_pieces if metainfo_num_pieces is not None else self._num_pieces
 
     @property
     def total_size(self) -> int:
