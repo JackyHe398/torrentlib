@@ -343,7 +343,6 @@ print(metainfo.info_hash)
 print(metainfo.name)
 print(metainfo.total_size)
 print(metainfo.piece_length)
-print(metainfo.num_pieces)
 ```
 
 Create a `Torrent` from that metainfo when you want tracker or peer operations:
@@ -399,7 +398,7 @@ if metainfo.info is not None:
 ## Notes
 
 - `TorrentStatus` currently provides `COMPLETED`, `STARTED`, and `STOPPED`.
-- `TorrentMetaInfo` owns torrent metainfo such as `info_hash`, `name`, `piece_length`, `num_pieces`, and `total_size`.
+- `TorrentMetaInfo` owns torrent metainfo such as `info_hash`, `name`, `piece_length`, and `total_size`.
 - `Torrent` owns runtime swarm state such as `downloaded`, `uploaded`, `left`, `event`, and peer caches.
 - `Torrent.get_files_info()` returns `None` until metadata is available.
 - `Torrent.update_from_metadata()` verifies that received metadata matches the original info hash.

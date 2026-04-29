@@ -63,7 +63,6 @@ def test_torrent_metainfo_from_file_matches_readme():
     assert metainfo.name == "ubuntu-26.04-desktop-amd64.iso"
     assert metainfo.total_size == 6518974464
     assert metainfo.piece_length == 262144
-    assert metainfo.num_pieces == 24868
 
 
 def test_torrent_from_metainfo_matches_readme():
@@ -76,6 +75,7 @@ def test_torrent_from_metainfo_matches_readme():
     assert torrent.info_hash == metainfo.info_hash
     assert torrent.name == metainfo.name
     assert torrent.total_size == metainfo.total_size
+    assert torrent.num_pieces == 24868
 
 
 def test_torrent_metainfo_editing_examples_match_readme():
