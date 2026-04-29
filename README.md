@@ -19,16 +19,18 @@ It does not manage piece downloads/uploads for complete content transfer.
 pip install torrentlib
 ```
 
+Supports Python 3.10 through 3.14.
+
 ## Public API
 
 ```python
-from torrentlib import Torrent, TorrentStatus, Peer
+from torrentlib import Torrent, TorrentMetaInfo, TorrentStatus, Peer
 from torrentlib.Tracker import Check, Query
 ```
 
 ## Working With Torrents
 
-Create a `Torrent` from a `.torrent` file when you already have metadata:
+`Torrent.from_file(...)` remains available as a shortcut:
 
 ```python
 from torrentlib import Torrent
@@ -226,7 +228,7 @@ with Peer(peer_addr, torrent, peer_id) as peer:
         peer.request_all_metadata()
         peer.read_all()
 
-    if torrent.metadata is not None:
+    if torrent.has_metainfo:
         print("Metadata downloaded")
         print(torrent.name)
         print(torrent.total_size)
@@ -237,7 +239,7 @@ with Peer(peer_addr, torrent, peer_id) as peer:
                 print(file_hash, file_info["name"], file_info["length"])
 ```
 
-## Magnet To Metadata Example
+## Infohash To Metadata Example
 
 ```python
 from torrentlib import Peer, Torrent, TorrentStatus
@@ -265,7 +267,7 @@ for peer_addr in response.get("peers", [])[:5]:
             peer.request_all_metadata()
             peer.read_all()
 
-            if torrent.metadata is not None:
+            if torrent.has_metainfo:
                 print(torrent)
                 files = torrent.get_files_info()
                 if files:
@@ -324,9 +326,80 @@ from torrentlib.Peer.PeerCommunicationException import (
 )
 ```
 
+## TorrentMetaInfo
+
+When you want to inspect or modify `.torrent` metainfo directly, use `TorrentMetaInfo`.
+`Torrent` is for runtime tracker and peer state, while `TorrentMetaInfo` handles the
+metainfo structure itself.
+
+Load metainfo directly from a `.torrent` file:
+
+```python
+from torrentlib import TorrentMetaInfo
+
+metainfo = TorrentMetaInfo.from_file("example.torrent")
+
+print(metainfo.info_hash)
+print(metainfo.name)
+print(metainfo.total_size)
+print(metainfo.piece_length)
+```
+
+Create a `Torrent` from that metainfo when you want tracker or peer operations:
+
+```python
+from torrentlib import Torrent, TorrentMetaInfo
+
+metainfo = TorrentMetaInfo.from_file("example.torrent")
+torrent = Torrent.from_metainfo(metainfo)
+```
+
+You can modify metainfo directly through `TorrentMetaInfo.data` and `TorrentMetaInfo.info`.
+Top-level metainfo fields such as `announce` and `announce-list` live in `data`, while
+fields inside the torrent `info` dictionary live in `info`.
+
+```python
+from torrentlib import TorrentMetaInfo
+
+metainfo = TorrentMetaInfo.from_file("example.torrent")
+
+# Modify top-level metainfo fields.
+metainfo.data[b"announce"] = b"https://tracker.example.com/announce"
+metainfo.data[b"announce-list"] = [
+    [b"https://tracker.example.com/announce"],
+    [b"udp://tracker2.example.com:6969/announce"],
+]
+
+# Modify fields inside the info dictionary.
+if metainfo.info is not None:
+    metainfo.info[b"private"] = 1
+
+# Recompute derived state such as info_hash when info changed.
+metainfo.refresh()
+
+# Export the updated .torrent file.
+metainfo.to_file("example-private.torrent")
+```
+
+Custom tags are also supported in both places:
+
+```python
+from torrentlib import TorrentMetaInfo
+
+metainfo = TorrentMetaInfo.from_file("example.torrent")
+
+metainfo.data[b"x-meta-tag"] = b"custom value"
+
+if metainfo.info is not None:
+    metainfo.info[b"x-info-tag"] = b"custom value"
+    metainfo.refresh()
+```
+
 ## Notes
 
 - `TorrentStatus` currently provides `COMPLETED`, `STARTED`, and `STOPPED`.
+- `TorrentMetaInfo` owns torrent metainfo such as `info_hash`, `name`, `piece_length`, and `total_size`.
+- `Torrent` owns runtime swarm state such as `downloaded`, `uploaded`, `left`, `event`, and peer caches.
 - `Torrent.get_files_info()` returns `None` until metadata is available.
 - `Torrent.update_from_metadata()` verifies that received metadata matches the original info hash.
 - `Query.single()` and `Query.multi()` update the `Torrent` peer caches automatically.
