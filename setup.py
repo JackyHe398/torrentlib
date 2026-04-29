@@ -1,13 +1,4 @@
-import warnings
 from setuptools import setup, find_packages
-
-warnings.warn(
-    "bt_tracker_utils has been renamed to torrentlib. "
-    "Please use 'pip install torrentlib' and update your imports. "
-    "This package will be removed in a future version.",
-    DeprecationWarning,
-    stacklevel=2
-)
 
 setup(
     name="torrentlib",
