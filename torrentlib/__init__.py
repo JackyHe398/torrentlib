@@ -4,3 +4,5 @@ from .Torrent import Torrent, TorrentStatus
 from .TorrentMetaInfo import TorrentMetaInfo
 
 __all__ = ['Tracker', 'Peer', 'Torrent', 'TorrentStatus', 'TorrentMetaInfo']
+__author__ = "JackyHe398"
+

@@ -11,15 +11,14 @@ warnings.warn(
 
 setup(
     name="torrentlib",
-    version="1.0.3",
+    version="1.1.0",
     author="JackyHe398",
     author_email="hekinghung@gmail.com",
     description="BitTorrent utilities for querying trackers and peers",
     install_requires=[
         "requests>=2.32.4",
         "bencodepy>=0.9.5",
-        "humanize>=4.9.0",
-        "torrent-parser>=0.4.0"
+        "humanize>=4.9.0"
     ],
     packages=find_packages(),
     python_requires=">=3.10",
