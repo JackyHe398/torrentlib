@@ -1,8 +1,11 @@
+import ipaddress
 import threading
-import humanize
 from enum import Enum
 from typing import Any, Optional
 
+import humanize
+
+from .MagnetParser import MagnetParser
 from .TorrentMetaInfo import TorrentMetaInfo
 
 
@@ -169,6 +172,50 @@ class Torrent:
             uploaded=uploaded,
             event=event,
         )
+
+    @classmethod
+    def from_magnet(
+        cls,
+        magnet_uri: str,
+        downloaded: int = 0,
+        uploaded: int = 0,
+        event: TorrentStatus = TorrentStatus.STARTED,
+    ) -> "Torrent":
+        """Create a torrent from a BitTorrent magnet URI.
+
+        The URI must contain an ``xt=urn:btih:...`` parameter. Both the
+        40-character hexadecimal and 32-character Base32 BTIH encodings are
+        accepted. ``dn``, ``xl``, and repeated ``tr`` parameters are retained
+        as name, total-size, and tracker hints respectively.
+        """
+        magnet = MagnetParser.parse(magnet_uri)
+        torrent = cls(
+            info_hash=magnet.info_hash,
+            total_size=magnet.exact_length or 0,
+            downloaded=downloaded,
+            uploaded=uploaded,
+            event=event,
+            name=magnet.display_name,
+        )
+
+        if magnet.trackers:
+            encoded_trackers = [
+                tracker.encode("utf-8") for tracker in magnet.trackers
+            ]
+            torrent.metainfo.data[b"announce"] = encoded_trackers[0]
+            torrent.metainfo.data[b"announce-list"] = [
+                [tracker] for tracker in encoded_trackers
+            ]
+
+        for endpoint in magnet.peer_endpoints:
+            host, _ = endpoint
+            try:
+                is_ipv6 = ipaddress.ip_address(host).version == 6
+            except ValueError:
+                is_ipv6 = False
+            target = torrent.peers6 if is_ipv6 else torrent.peers
+            target[endpoint] = {}
+        return torrent
 
     # region - property
     @property
