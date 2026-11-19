@@ -1,7 +1,7 @@
 import socket
 import bencodepy
 import struct
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Any
 from ..Torrent import Torrent
 from .PeerCommunicationException import *
@@ -395,6 +395,8 @@ class Peer():
 
     # region - receive and parse messages
     def _recv_msg(self):
+
+    def _recv_msg(self, deadline: Optional[datetime] = None):
         """
         Receive exactly one message from the peer.
         
@@ -406,17 +408,19 @@ class Peer():
             raise SocketClosedException(self.peer)
         assert self.s is not None, "Socket is not connected" # just for type checker
         
-        first_byte = self._recv_exact(1)
+        first_byte = self._recv_exact(1, deadline=deadline)
         self.s.settimeout(self.TIMEOUT)
         try:
-            length_data = first_byte + self._recv_exact(3)
+            length_data = first_byte + self._recv_exact(3, deadline=deadline)
             length = int.from_bytes(length_data, byteorder='big')
 
             if length == 0:
                 return {'type': 'keep-alive'}
 
-            msg_id = self._recv_exact(1)
-            payload = self._recv_exact(length - 1)
+            body = self._recv_exact(length, deadline=deadline)
+            msg_id = body[:1]
+            payload = body[1:]
+
         except socket.timeout as exc:
             self.close()
             raise PeerCommunicationException(self.peer, "Timed out while receiving a message") from exc
@@ -453,7 +457,7 @@ class Peer():
         raise InvalidResponseException(self.peer, f"Unknown message ID: {msg_id.hex()}")
 
 
-    def _recv_exact(self, num_bytes:  int) -> bytes:
+    def _recv_exact(self, num_bytes:  int, deadline=None) -> bytes:
         """
         Receive exactly num_bytes from the socket.
 
@@ -464,8 +468,15 @@ class Peer():
             SocketClosedException: If the peer closes its sending side before all bytes are received.
             socket.timeout: If timeout expires
         """
+        assert self.s is not None, "Socket is not connected" # just for type checker
         data = b''
+
         while len(data) < num_bytes:
+            if deadline is not None:
+                remaining = (deadline - datetime.now()).total_seconds()
+                if remaining <= 0:
+                    raise socket.timeout("Metadata deadline expired")
+                self.s.settimeout(remaining)
             chunk = self.s.recv(num_bytes - len(data)) # type: ignore
             if not chunk:
                 # Connection closed by peer
