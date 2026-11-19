@@ -1,7 +1,7 @@
 import ipaddress
 import threading
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import humanize
 
@@ -207,14 +207,17 @@ class Torrent:
                 [tracker] for tracker in encoded_trackers
             ]
 
+        added = []
+        added6 = []
         for endpoint in magnet.peer_endpoints:
             host, _ = endpoint
             try:
                 is_ipv6 = ipaddress.ip_address(host).version == 6
             except ValueError:
                 is_ipv6 = False
-            target = torrent.peers6 if is_ipv6 else torrent.peers
-            target[endpoint] = {}
+            target = added6 if is_ipv6 else added
+            target.append((endpoint, None))
+        torrent._update_peers(added=added, added6=added6)
         return torrent
 
     # region - property
@@ -252,6 +255,27 @@ class Torrent:
     # endregion
 
     # region - helper function
+    def _update_peers(
+        self,
+        added: Iterable[tuple[tuple[str, int], Optional[dict]]] = (),
+        added6: Iterable[tuple[tuple[str, int], Optional[dict]]] = (),
+        dropped: Iterable[tuple[str, int]] = (),
+        dropped6: Iterable[tuple[str, int]] = (),
+    ) -> None:
+        """Apply peer updates together. None adds an endpoint without replacing flags."""
+        with self._peers_lock:
+            for peers, additions, removals in (
+                (self.peers, added, dropped),
+                (self.peers6, added6, dropped6),
+            ):
+                for endpoint, metadata in additions:
+                    if metadata is None:
+                        peers.setdefault(endpoint, {})
+                    else:
+                        peers[endpoint] = metadata
+                for endpoint in removals:
+                    peers.pop(endpoint, None)
+
     def update_uploaded(self, bytes_uploaded: int):
         self.uploaded += bytes_uploaded
 

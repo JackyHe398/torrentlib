@@ -202,10 +202,10 @@ class Query:
                 response_decode = _parse_http_tracker_response(response_bdecode)
                 
                 # Update torrent with peers
-                if "peers" in response_decode:
-                    torrent.peers |= {i: {} for i in response_decode["peers"]}
-                if "peers6" in response_decode:
-                    torrent.peers6 |= {i: {} for i in response_decode["peers6"]}
+                torrent._update_peers(
+                    added=((endpoint, None) for endpoint in response_decode.get("peers", ())),
+                    added6=((endpoint, None) for endpoint in response_decode.get("peers6", ())),
+                )
                     
                 return _format_result(response_decode)
             elif status_code == 300:
@@ -289,8 +289,9 @@ class Query:
         # Parse response and update torrent
         parsed_response = _parse_udp_announce_response(response, TRANSACTION_ID)
         
-        if "peers" in parsed_response:
-            torrent.peers |= {i: {} for i in parsed_response["peers"]}
+        torrent._update_peers(
+            added=((endpoint, None) for endpoint in parsed_response["peers"]),
+        )
             
         return _format_result(parsed_response)
 
