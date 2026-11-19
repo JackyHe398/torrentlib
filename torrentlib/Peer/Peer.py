@@ -394,7 +394,41 @@ class Peer():
     
 
     # region - receive and parse messages
-    def _recv_msg(self):
+    def read_all(self):
+        """Read all available data from the socket."""
+        if not self._is_connected():
+            raise SocketClosedException(self.peer)
+        assert self.s is not None, "Socket is not connected"
+        
+        try:
+            while True:
+                self._recv_msg()
+                self.s.settimeout(0.1)  # Wait briefly for the next message to start.
+        except socket.timeout:
+            # Finish reading
+            pass
+        finally:
+            if self.s is not None:
+                self.s.settimeout(self.TIMEOUT)
+
+
+    def read_metadata(self, timeout=5):
+        """Read metadata with overall timeout"""
+        if not self._is_connected():
+            raise SocketClosedException(self.peer)
+        assert self.s is not None, "Socket is not connected"
+
+        deadline = datetime.now() + timedelta(seconds=timeout)
+        try:
+            while not self.torrent.metadata:
+                self._recv_msg(deadline=deadline)
+        except (PeerCommunicationException, socket.timeout):
+            # currently PeerCommunicationException inherite timeout and InvalidResponseException
+            pass
+        finally:
+            if self.s is not None:
+                self.s.settimeout(self.TIMEOUT)
+
 
     def _recv_msg(self, deadline: Optional[datetime] = None):
         """
@@ -531,7 +565,7 @@ class Peer():
             )
 
         # Check if this is metadata
-        elif extended_id == self.peer_extension_ids.get('ut_metadata'):
+        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_metadata'):
             self._handle_metadata_message(payload)
         
         else:
@@ -606,7 +640,7 @@ class Peer():
                         self.send_extended_msg(response_payload, extended_id)
                 else:
                     # Reject: piece out of range
-                    reject()
+                    _reject()
                 
         except Exception as e:
             raise InvalidResponseException(self.peer, f"Failed to parse metadata message: {e}") from e
@@ -668,21 +702,3 @@ class Peer():
         
         # Clear pieces to free memory
         self.metadata_pieces.clear()
-    
-
-    def read_all(self):
-        """Read all available data from the socket."""
-        if not self._is_connected():
-            raise SocketClosedException(self.peer)
-        assert self.s is not None, "Socket is not connected"
-        
-        try:
-            while True:
-                self._recv_msg()
-                self.s.settimeout(0.1)  # Wait briefly for the next message to start.
-        except socket.timeout:
-            # Finish reading
-            pass
-        finally:
-            if self.s is not None:
-                self.s.settimeout(self.TIMEOUT)
