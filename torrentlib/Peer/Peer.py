@@ -214,7 +214,7 @@ class Peer():
 
     def _is_connected(self) -> bool:        
         return self.s is not None and self.s.fileno() != -1
-    
+
     # region - connect and disconnect
     def connect(self):
         """
@@ -239,11 +239,7 @@ class Peer():
             self.sendall(msg)
             
             # Receive handshake response
-            response = self.s.recv(68)
-            
-            # Validate response
-            if len(response) < 68:
-                raise InvalidResponseException(self.peer, "Incomplete handshake response")
+            response = self._recv_exact(68)
             
             if response[0:20] != b'\x13BitTorrent protocol':
                 raise InvalidResponseException(self.peer, "Invalid protocol")
@@ -398,7 +394,7 @@ class Peer():
     
 
     # region - receive and parse messages
-    def _receive_msg(self):
+    def _recv_msg(self):
         """
         Receive exactly one message from the peer.
         
@@ -406,38 +402,24 @@ class Peer():
             A dictionary representing the message received.
             the change to status will be reflected on the Peer object.
         """
-        def _recv_exact(num_bytes:  int) -> bytes:
-            nonlocal self
-            """
-            Receive exactly num_bytes from the socket.
-            
-            Returns:
-                Bytes received, or None if connection closed
-                
-            Raises:
-                socket.timeout: If timeout expires
-            """
-            data = b''
-            while len(data) < num_bytes:
-                chunk = self.s.recv(num_bytes - len(data)) # type: ignore
-                if not chunk:
-                    # Connection closed by peer
-                    raise SocketClosedException(self.peer)
-                data += chunk
-            return data
         if not self._is_connected():
             raise SocketClosedException(self.peer)
         assert self.s is not None, "Socket is not connected" # just for type checker
         
-        length_data = _recv_exact(4)
-        self.s.settimeout(self.TIMEOUT) # reset timeout due to <def _read_all()>
-        length = int.from_bytes(length_data, byteorder='big')
-        
-        if length == 0:
-            return {'type': 'keep-alive'}
-        
-        msg_id = _recv_exact(1)
-        payload = _recv_exact(length - 1)
+        first_byte = self._recv_exact(1)
+        self.s.settimeout(self.TIMEOUT)
+        try:
+            length_data = first_byte + self._recv_exact(3)
+            length = int.from_bytes(length_data, byteorder='big')
+
+            if length == 0:
+                return {'type': 'keep-alive'}
+
+            msg_id = self._recv_exact(1)
+            payload = self._recv_exact(length - 1)
+        except socket.timeout as exc:
+            self.close()
+            raise PeerCommunicationException(self.peer, "Timed out while receiving a message") from exc
         
         if msg_id == b'\x00':
             return {'type': 'choke'}
@@ -469,6 +451,27 @@ class Peer():
             return { 'type': 'extend'}
         
         raise InvalidResponseException(self.peer, f"Unknown message ID: {msg_id.hex()}")
+
+
+    def _recv_exact(self, num_bytes:  int) -> bytes:
+        """
+        Receive exactly num_bytes from the socket.
+
+        Returns:
+            Exactly num_bytes bytes received.
+
+        Raises:
+            SocketClosedException: If the peer closes its sending side before all bytes are received.
+            socket.timeout: If timeout expires
+        """
+        data = b''
+        while len(data) < num_bytes:
+            chunk = self.s.recv(num_bytes - len(data)) # type: ignore
+            if not chunk:
+                # Connection closed by peer
+                raise SocketClosedException(self.peer)
+            data += chunk
+        return data
     
     def _handle_extended_message(self, payload: bytes):
         """Handle extended messages (PEX, metadata, etc.)."""
@@ -670,11 +673,11 @@ class Peer():
         
         try:
             while True:
-                # long timeout will be applied in the middle of _receive_msg
-                self._receive_msg()
-                self.s.settimeout(0.1) # short timeout from second receive for shorter blocks
+                self._recv_msg()
+                self.s.settimeout(0.1)  # Wait briefly for the next message to start.
         except socket.timeout:
             # Finish reading
             pass
         finally:
-            self.s.settimeout(self.TIMEOUT)
+            if self.s is not None:
+                self.s.settimeout(self.TIMEOUT)
