@@ -491,7 +491,10 @@ class Peer():
                 m_dict: dict[bytes, int] = ext_handshake[b'm']
                 for name, ext_id in m_dict.items():
                     name_str = name.decode('utf-8')
-                    if name_str not in self.peer_extension_ids:
+                    if ext_id == 0: # disabled or no longer supported
+                        self.peer_extension_ids.pop(name_str, None)
+                    else:
+                        # update
                         self.peer_extension_ids[name_str] = ext_id
             
             # Extract metadata_size if present (BEP 9)
@@ -500,7 +503,7 @@ class Peer():
                 print(f"Peer has metadata: {self.metadata_size} bytes")
         
         # Check if this is PEX
-        elif extended_id == self.peer_extension_ids.get('ut_pex'):
+        elif extended_id == self.LOCAL_EXTENSIONS_IDS.get('ut_pex'):
             pex_result = parse_pex_message(payload, self.peer)
             
             # Thread-safe peer dict modifications
@@ -572,14 +575,14 @@ class Peer():
                 pass
                 
             elif msg_type == 0:  # request
-                def reject():
+                def _reject():
                     nonlocal self
                     response_payload = bencodepy.encode({b'msg_type': 2, b'piece': piece})
                     extended_id = self.peer_extension_ids.get('ut_metadata')
                     if extended_id is not None:
                         self.send_extended_msg(response_payload, extended_id)
                 if self.torrent.metadata is None:
-                    reject()
+                    _reject()
                     return
                 # Peer is requesting metadata piece from us
                 piece_offset = piece * METADATA_PIECE_SIZE
