@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="torrentlib",
-    version="1.1.0",
+    version="1.2.1",
     author="JackyHe398",
     author_email="hekinghung@gmail.com",
     description="BitTorrent utilities for querying trackers and peers",
