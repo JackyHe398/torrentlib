@@ -296,8 +296,9 @@ class Torrent:
             Dict mapping file hash (hex) to file info, or None if metadata not available.
         """
         # Fast path: cache already built
-        if self._file_cache is not None:
-            return self._file_cache
+        cached_files = self._file_cache
+        if cached_files is not None:
+            return cached_files
         
         # Acquire lock for lazy initialization
         with self._lock:
@@ -310,7 +311,7 @@ class Torrent:
             # Parse metadata and build cache
             info_dict = self.metainfo.info
             assert info_dict is not None
-            self._file_cache = {}
+            files: dict[str, dict[str, Any]] = {}
 
             if b"files" in info_dict:
                 # Multi-file torrent
@@ -322,7 +323,7 @@ class Torrent:
                             raise ValueError("Torrent file entry missing required fields")
                         hash_hex = file_info[b"hash"].hex()
                         path = [p.decode("utf-8") for p in file_info[b"path"]]
-                        self._file_cache[hash_hex] = {
+                        files[hash_hex] = {
                             "name": path[-1],
                             "length": file_info[b"length"],
                             "path": path,
@@ -335,13 +336,14 @@ class Torrent:
                     # Use first 32 bytes of pieces hash as file identifier
                     hash_hex = info_dict[b"pieces"][:32].hex()
                     name = info_dict[b"name"].decode("utf-8")
-                    self._file_cache[hash_hex] = {
+                    files[hash_hex] = {
                         "name": name,
                         "length": info_dict[b"length"],
                         "path": [name],
                     }
             
-            return self._file_cache
+            self._file_cache = files
+            return files
     
     def get_file_by_hash(self, hash_hex: str) -> Optional[dict]:
         """Get file info by hash. Returns None if not found."""
